@@ -16,7 +16,7 @@ module LocalOllamaWorkers
       @worker_id = Contract.id!(worker_id, "local worker_id")
       @endpoint = normalize_local_endpoint(endpoint)
       @listener_probe = listener_probe || MacOSListenerProbe.new
-      @process_probe = process_probe || MacOSProcessProbe.new
+      @process_probe = process_probe
     end
 
     def observe
@@ -51,13 +51,17 @@ module LocalOllamaWorkers
     end
 
     def process_info!(owner)
-      process = @process_probe.info(owner.pid)
+      process = process_probe.info(owner.pid)
       raise Error, "cannot establish concrete local Ollama process identity" unless process
       unless File.basename(process.executable_path).casecmp?("ollama")
         raise Error, "configured local Ollama endpoint is not owned by an Ollama executable"
       end
 
       process
+    end
+
+    def process_probe
+      @process_probe ||= MacOSProcessProbe.new
     end
 
     def same_owner?(first, second)

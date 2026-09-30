@@ -19,21 +19,39 @@ SHA-256 manifest so the test suite is independent of sibling checkouts.
 
 ## Current scope
 
-LOW-03 established the frozen registry publisher foundation. LOW-04 adds a
-read-only macOS identity seam for one locally observable Ollama daemon:
+LOW publishes one configured loopback Ollama worker only after an explicit
+operator bootstrap has established every advertised capability for the current
+concrete daemon generation.
 
-- the logical worker ID remains stable across daemon restarts;
-- the concrete `generation_id` is an opaque digest of process-incarnation
-  evidence, including the kernel-reported microsecond process start time;
-- listener ownership is observed independently from process identity and is
-  checked twice so a replacement during observation fails closed; and
-- endpoint equality never proves worker continuity.
+- The logical worker ID remains stable across daemon restarts.
+- The concrete `generation_id` is an opaque digest of kernel process
+  incarnation evidence.
+- Bootstrap first proves that the named model is already installed, then sends
+  an empty-prompt, zero-token load request with the requested context. It never
+  pulls a missing model.
+- The loaded model identity, full digest, effective context, allocation size,
+  and accelerator allocation size come from the machine-readable Ollama
+  `/api/ps` response.
+- `fully_gpu_resident` is true only when Ollama reports a positive runtime
+  `size` and `size_vram == size`. Partial placement is recorded as false.
+- `gpu_id` is the provider-neutral accelerator model and core count reported
+  by macOS, such as `Apple M4 Pro 20-core GPU`. Serial numbers and local paths
+  are neither read into evidence nor published.
 
-LOW-04 deliberately does not feed this identity into registry publication yet.
-The registry contract requires truthful generation-bound model capability
-evidence as well as identity, and LOW-05 owns that evidence. Until LOW-05 is
-complete, `workers --json` continues to publish an empty worker array rather
-than manufacturing a READY or capability-bearing local worker.
+The evidence is stored separately from registry publisher identity/revision
+state in `local-capability-evidence-v1.json`. Writes are locked and atomic.
+Malformed evidence fails closed.
+
+Evidence is bound to `worker_id`, `generation_id`, and endpoint. Restarting
+or replacing Ollama changes the generation and immediately makes prior
+evidence ineligible, even when the endpoint, model, and digest are unchanged.
+Re-bootstrap the required model after a restart.
+
+Several model records may be retained for one generation without keeping every
+model loaded simultaneously. Ordinary publication rechecks the server version
+and installed digest. If an evidenced model is currently loaded, its digest,
+effective context, residency result, and allocation sizes must still match the
+bootstrap observation; a changed runtime configuration cannot remain READY.
 
 ## CLI
 
@@ -41,10 +59,41 @@ than manufacturing a READY or capability-bearing local worker.
 bin/low workers --json
 ```
 
-The command emits exactly one JSON snapshot to stdout. It currently publishes
-an empty `workers` array. Publisher state defaults to
-`~/.local/state/local-ollama-workers`; set `LOW_STATE_ROOT` to select another
-state directory.
+The command emits exactly one JSON snapshot to stdout. It is observational: it
+does not load or warm a model, run inference, pull a model, or change Ollama
+configuration. With no eligible current-generation evidence it publishes an
+empty `workers` array.
+
+Inspect installed and loaded models without changing runtime state:
+
+```bash
+ollama list
+ollama ps
+curl --fail --silent --show-error http://127.0.0.1:11434/api/tags
+curl --fail --silent --show-error http://127.0.0.1:11434/api/ps
+```
+
+Deliberately establish capability evidence for one already-installed model:
+
+```bash
+bin/low bootstrap \
+  --model ministral-3:14b-instruct-2512-q4_K_M \
+  --context-length 131072 \
+  --json
+```
+
+The model name and context above are examples, not defaults. Bootstrap records
+the context Ollama actually loaded; it never promotes or rounds that value to
+the requested one.
+
+Publisher and capability state default to
+`~/.local/state/local-ollama-workers`. Set `LOW_STATE_ROOT` to select another
+state directory. `LOW_WORKER_ID` and `LOW_OLLAMA_ENDPOINT` may override the
+single logical worker ID and loopback endpoint.
+
+LOW is ready to supply LOW-06 with a conforming local worker after the exact
+production model needed by that proof is explicitly bootstrapped. LOW does not
+select that model from AFW requirements or run the workload itself.
 
 ## Development
 
@@ -56,4 +105,3 @@ bundle exec rake
 `rake` runs the full test suite, production lint, and structural Minitest lint.
 No ordinary test or registry publication requires an Ollama server or makes an
 inference request.
-
