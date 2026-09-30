@@ -1,0 +1,44 @@
+AllCops:
+  NewCops: enable
+  TargetRubyVersion: 4.0
+  SuggestExtensions: false
+
+Layout/LineLength:
+  Max: 120
+
+Metrics/AbcSize:
+  Max: 40
+  Exclude:
+    - "test/**/*"
+
+Metrics/BlockLength:
+  Exclude:
+    - "test/**/*"
+
+Metrics/ClassLength:
+  Max: 300
+  Exclude:
+    - "test/**/*"
+
+Metrics/ModuleLength:
+  Max: 200
+
+Metrics/MethodLength:
+  Max: 30
+  Exclude:
+    - "test/**/*"
+
+Metrics/CyclomaticComplexity:
+  Max: 12
+
+Metrics/ParameterLists:
+  Max: 6
+
+Metrics/PerceivedComplexity:
+  Max: 12
+
+Style/Documentation:
+  Enabled: false
+
+Style/StringLiterals:
+  EnforcedStyle: double_quotes

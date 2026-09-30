@@ -1,0 +1,40 @@
+plugins: rubocop-minitest
+
+AllCops:
+  DisabledByDefault: true
+  SuggestExtensions: false
+  TargetRubyVersion: 4.0
+
+Minitest/AssertionInLifecycleHook:
+  Enabled: true
+
+Minitest/DuplicateTestRun:
+  Enabled: true
+
+Minitest/Focus:
+  Enabled: true
+
+Minitest/NonExecutableTestMethod:
+  Enabled: true
+
+Minitest/NonPublicTestMethod:
+  Enabled: true
+
+Minitest/ReturnInTestMethod:
+  Enabled: true
+
+Minitest/SkipWithoutReason:
+  Enabled: true
+
+Minitest/TestFileName:
+  Enabled: true
+
+Minitest/UnreachableAssertion:
+  Enabled: true
+
+Minitest/UnspecifiedException:
+  Enabled: true
+
+Minitest/UselessAssertion:
+  Enabled: true
+
