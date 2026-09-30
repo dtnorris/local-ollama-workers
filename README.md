@@ -17,21 +17,23 @@ Canonical contract fixtures are copied into
 `test/fixtures/dynamic-worker-registry-v0.1` and pinned by their authoritative
 SHA-256 manifest so the test suite is independent of sibling checkouts.
 
-## LOW-03 scope
+## Current scope
 
-LOW-03 provides:
+LOW-03 established the frozen registry publisher foundation. LOW-04 adds a
+read-only macOS identity seam for one locally observable Ollama daemon:
 
-- durable publisher identity and monotonically advancing revision state;
-- atomic publication-state updates protected by an exclusive file lock;
-- strict registry, worker, capability, and fingerprint validation;
-- deterministic construction from already-proven worker observations; and
-- an empty observational publisher suitable for wiring into WLO.
+- the logical worker ID remains stable across daemon restarts;
+- the concrete `generation_id` is an opaque digest of process-incarnation
+  evidence, including the kernel-reported microsecond process start time;
+- listener ownership is observed independently from process identity and is
+  checked twice so a replacement during observation fails closed; and
+- endpoint equality never proves worker continuity.
 
-It does **not** yet discover a real local Ollama generation or produce real
-generation-bound model context/residency evidence. LOW-04 will establish local
-worker generation semantics. LOW-05 will establish real capability evidence.
-Until those steps are complete, LOW must not claim production-ready local
-workers merely because an Ollama endpoint responds.
+LOW-04 deliberately does not feed this identity into registry publication yet.
+The registry contract requires truthful generation-bound model capability
+evidence as well as identity, and LOW-05 owns that evidence. Until LOW-05 is
+complete, `workers --json` continues to publish an empty worker array rather
+than manufacturing a READY or capability-bearing local worker.
 
 ## CLI
 
