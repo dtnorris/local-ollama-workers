@@ -82,6 +82,18 @@ bin/low bootstrap \
   --json
 ```
 
+When AdventureFinder has already resolved a short alias against a frozen AFW
+plan, pass that exact artifact instead:
+
+```bash
+bin/low bootstrap --requirement /path/to/model-requirement.json --json
+```
+
+The requirement path validates the exact model, full digest, context, residency,
+and optional GPU identity. Installed-model and GPU mismatches fail before preload;
+observed context or residency mismatches prevent evidence persistence. The alias is
+retained only as provenance and is never interpreted by LOW.
+
 The model name and context above are examples, not defaults. Bootstrap records
 the context Ollama actually loaded; it never promotes or rounds that value to
 the requested one.
@@ -91,9 +103,9 @@ Publisher and capability state default to
 state directory. `LOW_WORKER_ID` and `LOW_OLLAMA_ENDPOINT` may override the
 single logical worker ID and loopback endpoint.
 
-LOW is ready to supply LOW-06 with a conforming local worker after the exact
-production model needed by that proof is explicitly bootstrapped. LOW does not
-select that model from AFW requirements or run the workload itself.
+LOW supplies a conforming local worker only after the exact production model is
+explicitly bootstrapped. It does not choose a pool or model, resolve aliases, or
+run the workload itself.
 
 ## Development
 

@@ -12,16 +12,23 @@ module LocalOllamaWorkers
       @clock = clock || -> { Time.now.utc }
     end
 
-    def bootstrap(model:, context_length:)
+    def bootstrap(model: nil, context_length: nil, requirement: nil)
+      if requirement
+        model = requirement.model
+        context_length = requirement.required_context_length
+      end
       first_identity = current_identity!
       ensure_endpoint!(first_identity)
       installed = installed_model!(model)
       ollama_version = @client.version
       gpu_id = @hardware_probe.gpu_id
+      requirement&.validate_preload!(installed:, gpu_id:)
       @client.preload!(model: installed.fetch("model"), context_length:)
       running = running_model!(installed.fetch("model"))
       same_digest = running.fetch("digest") == installed.fetch("digest")
       raise Error, "loaded model digest does not match the installed model digest" unless same_digest
+
+      requirement&.validate_observed!(running:, gpu_id:)
 
       second_identity = current_identity!
       same_generation = first_identity == second_identity
