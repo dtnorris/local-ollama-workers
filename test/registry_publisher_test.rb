@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require_relative "test_helper"
+require_relative "fixtures/dynamic-worker-registry-v0.1/conformance"
 
 class RegistryPublisherTest < Minitest::Test
   include LowTestSupport
@@ -28,6 +29,7 @@ class RegistryPublisherTest < Minitest::Test
       assert_equal %w[inference ollama remote], worker.fetch("labels")
       assert_equal fixture_worker.fetch("capability_fingerprint"), worker.fetch("capability_fingerprint")
       assert_equal snapshot, LocalOllamaWorkers::Contract.validate_snapshot!(snapshot, now: NOW)
+      assert_equal snapshot, DynamicWorkerRegistryV01::Conformance.validate_document!(snapshot, now: NOW)
     end
   end
 

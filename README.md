@@ -1,8 +1,7 @@
 # local-ollama-workers
 
 `local-ollama-workers` (LOW) publishes operator-owned local Ollama capacity
-through AdventureFinder's provider-neutral `dynamic-worker-registry/v0.1`
-boundary.
+through WLO's provider-neutral `dynamic-worker-registry/v0.1` provider API.
 
 > **AFW defines work. LOW and RPOF expose workers. WLO matches work to workers.**
 
@@ -11,11 +10,22 @@ manage paid capacity, or execute inference workloads. Ordinary registry
 publication is observational: it must not start or restart Ollama, pull or load
 models, warm a model, change runtime configuration, or run inference.
 
-The authoritative contract is
-`dtnorris/md-specification-files/contracts/dynamic-worker-registry/v0.1`.
-Canonical contract fixtures are copied into
-`test/fixtures/dynamic-worker-registry-v0.1` and pinned by their authoritative
-SHA-256 manifest so the test suite is independent of sibling checkouts.
+The authoritative contract and standalone conformance implementation are
+WLO-owned at `contracts/dynamic-worker-registry/v0.1`. LOW retains a
+byte-identical, explicitly non-authoritative copy under
+`test/fixtures/dynamic-worker-registry-v0.1`, including WLO's SHA-256
+manifest. Its ordinary tests run from a LOW checkout alone and load no WLO
+runtime code. Optionally compare or refresh the copy from a sibling WLO
+checkout with:
+
+```bash
+script/sync-dynamic-worker-registry-contract --check
+script/sync-dynamic-worker-registry-contract --refresh
+```
+
+LOW and RPOF are independent publishers of the same WLO API. LOW has no RPOF
+runtime or test dependency, and ordinary publication requires no
+AdventureFinder state, batch handle, alias resolution, or AF production root.
 
 ## Current scope
 

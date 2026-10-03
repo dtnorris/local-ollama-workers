@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require_relative "test_helper"
+require_relative "fixtures/dynamic-worker-registry-v0.1/conformance"
 
 class ContractTest < Minitest::Test
   include LowTestSupport
@@ -9,10 +10,16 @@ class ContractTest < Minitest::Test
 
   def test_authoritative_fixture_hashes_are_pinned
     manifest = File.readlines(File.join(FIXTURE_ROOT, "SHA256SUMS"), chomp: true)
-    assert_equal 8, manifest.length
-
-    manifest.each do |line|
+    manifest_paths = manifest.to_h do |line|
       expected, relative = line.split(/\s+/, 2)
+      [relative, expected]
+    end
+    copied_paths = Dir[File.join(FIXTURE_ROOT, "**", "*")].select { |path| File.file?(path) }
+    copied_paths = copied_paths.reject { |path| path.end_with?("SHA256SUMS") }
+    copied_paths.map! { |path| path.delete_prefix("#{FIXTURE_ROOT}/") }
+
+    assert_equal copied_paths.sort, manifest_paths.keys.sort
+    manifest_paths.each do |relative, expected|
       actual = Digest::SHA256.file(File.join(FIXTURE_ROOT, relative)).hexdigest
       assert_equal expected, actual, relative
     end
@@ -21,20 +28,23 @@ class ContractTest < Minitest::Test
   def test_valid_authoritative_fixture_and_fingerprint
     document = fixture
     assert_same document, LocalOllamaWorkers::Contract.validate_snapshot!(document, now: NOW)
+    assert_same document, DynamicWorkerRegistryV01::Conformance.validate_document!(document, now: NOW)
     worker = document.fetch("workers").first
     assert_equal EXPECTED_FINGERPRINT, worker.fetch("capability_fingerprint")
     assert_equal EXPECTED_FINGERPRINT, LocalOllamaWorkers::Contract.capability_fingerprint(worker)
   end
 
   def test_every_authoritative_invalid_fixture_fails_closed
-    paths = Dir[File.join(FIXTURE_ROOT, "invalid", "*.json")].sort
-    assert_equal 7, paths.length
-
-    paths.each do |path|
+    invalid_expectations.each do |relative, expected_message|
+      path = File.join(FIXTURE_ROOT, relative)
       document = JSON.parse(File.binread(path))
       assert_raises(LocalOllamaWorkers::Error, File.basename(path)) do
         LocalOllamaWorkers::Contract.validate_snapshot!(document, now: NOW)
       end
+      error = assert_raises(DynamicWorkerRegistryV01::Conformance::Error, File.basename(path)) do
+        DynamicWorkerRegistryV01::Conformance.validate_bytes!(File.binread(path), now: NOW)
+      end
+      assert_includes error.message, expected_message
     end
   end
 
@@ -97,6 +107,11 @@ class ContractTest < Minitest::Test
   end
 
   private
+
+  def invalid_expectations
+    path = File.join(FIXTURE_ROOT, "INVALID_EXPECTATIONS.tsv")
+    File.readlines(path, chomp: true).to_h { |line| line.split("\t", 2) }
+  end
 
   def model(worker)
     worker.dig("capabilities", "ollama", "models").first

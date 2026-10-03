@@ -115,6 +115,7 @@ class CLITest < Minitest::Test
         }
       )
       workers_stdout = StringIO.new
+      preloads_before_publication = client.preloads.dup
       workers_status = LocalOllamaWorkers::CLI.run(
         ["workers", "--json"],
         env: { "LOW_STATE_ROOT" => root },
@@ -133,6 +134,7 @@ class CLITest < Minitest::Test
       assert_equal 0, bootstrap_status
       assert_equal 0, workers_status
       assert_equal [[MODEL, 131_072]], client.preloads
+      assert_equal preloads_before_publication, client.preloads
       assert_equal identity.fetch("generation_id"), evidence.fetch("generation_id")
       assert_equal %w[inference local ollama], worker.fetch("labels")
       assert_equal "Apple M4 Pro 20-core GPU", worker.dig("capabilities", "gpu_id")
