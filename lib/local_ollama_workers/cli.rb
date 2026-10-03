@@ -67,9 +67,7 @@ module LocalOllamaWorkers
         hardware_probe: hardware_probe,
         evidence_store:
       ).bootstrap(
-        model: options[:model],
-        context_length: options[:context_length],
-        requirement: options[:requirement] && ModelRequirement.load(options.fetch(:requirement))
+        capability_request: OllamaCapabilityRequest.load(options.fetch(:capability_request))
       )
       @stdout.write("#{JSON.generate(document)}\n")
     end
@@ -77,25 +75,15 @@ module LocalOllamaWorkers
     def parse_bootstrap_options(arguments)
       options = {}
       parser = OptionParser.new
-      parser.on("--model MODEL") { |value| options[:model] = value }
-      parser.on("--context-length LENGTH", Integer) { |value| options[:context_length] = value }
-      parser.on("--requirement PATH", "Exact AFW-derived model requirement JSON") do |value|
-        options[:requirement] = value
+      parser.on("--capability-request PATH", "Exact ollama-capability-request/v0.1 JSON") do |value|
+        options[:capability_request] = value
       end
       parser.on("--json") { options[:json] = true }
       remaining = arguments.dup
       parser.parse!(remaining)
       raise OptionParser::InvalidArgument, "unexpected arguments: #{remaining.join(' ')}" unless remaining.empty?
 
-      explicit = options[:model] || options[:context_length]
-      if options[:requirement] && explicit
-        raise OptionParser::InvalidArgument, "--requirement cannot be combined with --model or --context-length"
-      end
-
-      unless options[:requirement]
-        raise OptionParser::MissingArgument, "--model" unless options[:model]
-        raise OptionParser::MissingArgument, "--context-length" unless options[:context_length]
-      end
+      raise OptionParser::MissingArgument, "--capability-request" unless options[:capability_request]
       raise OptionParser::MissingArgument, "--json" unless options[:json]
 
       options
@@ -137,8 +125,7 @@ module LocalOllamaWorkers
     def usage
       [
         "Usage: bin/low workers --json",
-        "       bin/low bootstrap --model MODEL --context-length LENGTH --json",
-        "       bin/low bootstrap --requirement FILE --json"
+        "       bin/low bootstrap --capability-request FILE --json"
       ].join("\n")
     end
   end

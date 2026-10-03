@@ -5,6 +5,7 @@ require_relative "test_helper"
 class CapabilityBootstrapperTest < Minitest::Test
   MODEL = "fixture-model:latest"
   DIGEST = "a" * 64
+  GPU_ID = "Apple M4 Pro 20-core GPU"
 
   class Observer
     def initialize(*identities)
@@ -21,6 +22,7 @@ class CapabilityBootstrapperTest < Minitest::Test
 
   class Client
     attr_reader :endpoint, :preloads
+    attr_accessor :installed, :running
 
     def initialize(installed:, running:, endpoint: "http://127.0.0.1:11434")
       @installed = installed
@@ -29,8 +31,8 @@ class CapabilityBootstrapperTest < Minitest::Test
       @preloads = []
     end
 
-    def installed_models = @installed
-    def running_models = @running
+    def installed_models = installed
+    def running_models = running
     def version = "0.33.0"
 
     def preload!(model:, context_length:)
@@ -39,7 +41,11 @@ class CapabilityBootstrapperTest < Minitest::Test
   end
 
   class HardwareProbe
-    def gpu_id = "Apple M4 Pro 20-core GPU"
+    attr_accessor :gpu_id
+
+    def initialize
+      @gpu_id = GPU_ID
+    end
   end
 
   class EvidenceStore
@@ -55,34 +61,123 @@ class CapabilityBootstrapperTest < Minitest::Test
     end
   end
 
-  def test_bootstrap_records_observed_values_not_requested_or_assumed_values
-    client = Client.new(
-      installed: [installed_model],
-      running: [running_model(context_length: 65_536, fully_gpu_resident: false)]
-    )
+  def test_exact_runtime_match_preloads_and_records_observed_evidence
+    client = default_client
     store = EvidenceStore.new
-    bootstrapper = bootstrapper(client:, store:)
-
-    bootstrapper.bootstrap(model: MODEL, context_length: 131_072)
+    result = bootstrapper(client:, store:).bootstrap(capability_request: request)
 
     assert_equal [[MODEL, 131_072]], client.preloads
-    model = store.records.first.fetch(:model)
+    assert_equal store.records.first, result
+    model = result.fetch(:model)
     assert_equal MODEL, model.fetch("model")
     assert_equal DIGEST, model.fetch("digest")
-    assert_equal 65_536, model.fetch("context_length")
-    assert_equal false, model.fetch("fully_gpu_resident")
-    assert_equal 30_000, model.fetch("runtime_size_bytes")
-    assert_equal 20_000, model.fetch("runtime_size_vram_bytes")
-    assert_equal "2030-01-01T00:01:00Z", model.fetch("observed_at")
+    assert_equal 131_072, model.fetch("context_length")
+    assert_equal true, model.fetch("fully_gpu_resident")
+  end
+
+  def test_bootstrap_requires_parsed_generic_request
+    error = assert_raises(LocalOllamaWorkers::Error) do
+      bootstrapper(client: default_client, store: EvidenceStore.new).bootstrap(capability_request: {})
+    end
+
+    assert_includes error.message, "ollama-capability-request/v0.1"
+  end
+
+  def test_installed_model_and_digest_mismatches_fail_before_preload
+    {
+      "model" => [{"model" => "other-model:latest", "digest" => DIGEST}],
+      "digest" => [installed_model.merge("digest" => "b" * 64)]
+    }.each do |label, installed|
+      client = Client.new(installed:, running: [running_model])
+      store = EvidenceStore.new
+
+      assert_raises(LocalOllamaWorkers::Error, label) do
+        bootstrapper(client:, store:).bootstrap(capability_request: request)
+      end
+      assert_empty client.preloads, label
+      assert_empty store.records, label
+    end
+  end
+
+  def test_optional_gpu_id_mismatch_fails_before_preload
+    client = default_client
+    store = EvidenceStore.new
+    hardware = HardwareProbe.new
+    hardware.gpu_id = "Different GPU"
+
+    assert_raises(LocalOllamaWorkers::Error) do
+      bootstrapper(client:, store:, hardware:).bootstrap(capability_request: request)
+    end
+    assert_empty client.preloads
+    assert_empty store.records
+  end
+
+  def test_runtime_model_digest_context_and_residency_mismatches_fail_closed
+    mismatches = {
+      "model" => [running_model.merge("model" => "other-model:latest")],
+      "digest" => [running_model.merge("digest" => "b" * 64)],
+      "lower context" => [running_model.merge("context_length" => 65_536)],
+      "higher context" => [running_model.merge("context_length" => 262_144)],
+      "residency" => [running_model(fully_gpu_resident: false)]
+    }
+
+    mismatches.each do |label, running|
+      client = Client.new(installed: [installed_model], running:)
+      store = EvidenceStore.new
+
+      assert_raises(LocalOllamaWorkers::Error, label) do
+        bootstrapper(client:, store:).bootstrap(capability_request: request)
+      end
+      assert_equal [[MODEL, 131_072]], client.preloads, label
+      assert_empty store.records, label
+    end
+  end
+
+  def test_false_residency_requirement_is_also_matched_exactly
+    client = default_client
+    store = EvidenceStore.new
+
+    assert_raises(LocalOllamaWorkers::Error) do
+      bootstrapper(client:, store:).bootstrap(
+        capability_request: request(require_fully_gpu_resident: false)
+      )
+    end
+    assert_empty store.records
+  end
+
+  def test_exact_false_residency_match_succeeds
+    client = Client.new(
+      installed: [installed_model],
+      running: [running_model(fully_gpu_resident: false)]
+    )
+    store = EvidenceStore.new
+
+    bootstrapper(client:, store:).bootstrap(
+      capability_request: request(require_fully_gpu_resident: false)
+    )
+
+    assert_equal false, store.records.first.fetch(:model).fetch("fully_gpu_resident")
+  end
+
+  def test_absent_gpu_requirement_does_not_reinterpret_observed_gpu
+    client = default_client
+    store = EvidenceStore.new
+    hardware = HardwareProbe.new
+    hardware.gpu_id = "Any exact observed GPU"
+
+    bootstrapper(client:, store:, hardware:).bootstrap(
+      capability_request: request(required_gpu_id: nil)
+    )
+
+    assert_equal "Any exact observed GPU", store.records.first.fetch(:gpu_id)
   end
 
   def test_missing_model_fails_before_preload_without_downloading
     client = Client.new(installed: [], running: [])
     store = EvidenceStore.new
-    bootstrapper = bootstrapper(client:, store:)
 
     error = assert_raises(LocalOllamaWorkers::Error) do
-      bootstrapper.bootstrap(model: MODEL, context_length: 131_072)
+      bootstrapper(client:, store:).bootstrap(capability_request: request)
     end
 
     assert_includes error.message, "refusing to download"
@@ -90,28 +185,14 @@ class CapabilityBootstrapperTest < Minitest::Test
     assert_empty store.records
   end
 
-  def test_runtime_digest_is_never_rewritten_to_installed_digest
-    client = Client.new(
-      installed: [installed_model],
-      running: [running_model.merge("digest" => "b" * 64)]
-    )
-    store = EvidenceStore.new
-
-    assert_raises(LocalOllamaWorkers::Error) do
-      bootstrapper(client:, store:).bootstrap(model: MODEL, context_length: 131_072)
-    end
-
-    assert_empty store.records
-  end
-
   def test_generation_change_during_bootstrap_prevents_persistence
-    replacement = identity.merge("generation_id" => "low-macos-#{"b" * 64}")
+    replacement = identity.merge("generation_id" => "low-macos-#{'b' * 64}")
     observer = Observer.new(identity, replacement)
-    client = Client.new(installed: [installed_model], running: [running_model])
+    client = default_client
     store = EvidenceStore.new
 
     assert_raises(LocalOllamaWorkers::Error) do
-      bootstrapper(client:, store:, observer:).bootstrap(model: MODEL, context_length: 131_072)
+      bootstrapper(client:, store:, observer:).bootstrap(capability_request: request)
     end
 
     assert_empty store.records
@@ -119,33 +200,50 @@ class CapabilityBootstrapperTest < Minitest::Test
 
   private
 
-  def bootstrapper(client:, store:, observer: Observer.new(identity, identity))
+  def bootstrapper(client:, store:, hardware: HardwareProbe.new, observer: Observer.new(identity, identity))
     LocalOllamaWorkers::CapabilityBootstrapper.new(
       observer:,
       client:,
-      hardware_probe: HardwareProbe.new,
+      hardware_probe: hardware,
       evidence_store: store,
       clock: -> { Time.utc(2030, 1, 1, 0, 1, 0) }
     )
   end
 
+  def request(require_fully_gpu_resident: true, required_gpu_id: GPU_ID)
+    ollama = {
+      "model" => MODEL,
+      "expected_digest" => DIGEST,
+      "required_context_length" => 131_072,
+      "require_fully_gpu_resident" => require_fully_gpu_resident
+    }
+    ollama["required_gpu_id"] = required_gpu_id unless required_gpu_id.nil?
+    LocalOllamaWorkers::OllamaCapabilityRequest.new(
+      JSON.generate("contract_version" => "ollama-capability-request/v0.1", "ollama" => ollama)
+    )
+  end
+
+  def default_client
+    Client.new(installed: [installed_model], running: [running_model])
+  end
+
   def identity
     {
       "worker_id" => "local-ollama-1",
-      "generation_id" => "low-macos-#{"a" * 64}",
+      "generation_id" => "low-macos-#{'a' * 64}",
       "endpoint" => "http://127.0.0.1:11434"
     }
   end
 
   def installed_model
-    { "model" => MODEL, "digest" => DIGEST }
+    {"model" => MODEL, "digest" => DIGEST}
   end
 
-  def running_model(context_length: 131_072, fully_gpu_resident: true)
+  def running_model(fully_gpu_resident: true)
     {
       "model" => MODEL,
       "digest" => DIGEST,
-      "context_length" => context_length,
+      "context_length" => 131_072,
       "fully_gpu_resident" => fully_gpu_resident,
       "runtime_size_bytes" => 30_000,
       "runtime_size_vram_bytes" => fully_gpu_resident ? 30_000 : 20_000

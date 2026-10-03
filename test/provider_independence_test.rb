@@ -5,8 +5,11 @@ require_relative "test_helper"
 class ProviderIndependenceTest < Minitest::Test
   REPO_ROOT = File.expand_path("..", __dir__)
   RUBY_ROOTS = %w[bin lib test].freeze
-  FORBIDDEN_RUNTIME_IMPORTS = %w[
-    adventure_finder runpod_ollama_fleet workload_orchestrator
+  FORBIDDEN_RUNTIME_IMPORTS = [
+    /adventure[_-]?finder/i,
+    /(?:\A|[\/_-])rpof(?:\z|[\/_-])/i,
+    /runpod[_-]ollama[_-]fleet/i,
+    /workload[_-]orchestrator/i
   ].freeze
 
   def test_ruby_dependency_graph_imports_neither_other_provider_nor_wlo_or_adventurefinder
@@ -22,7 +25,7 @@ class ProviderIndependenceTest < Minitest::Test
     end
 
     violations = imports.select do |_path, required|
-      FORBIDDEN_RUNTIME_IMPORTS.any? { |name| required.include?(name) }
+      FORBIDDEN_RUNTIME_IMPORTS.any? { |pattern| required.match?(pattern) }
     end
     assert_empty violations
   end

@@ -18,11 +18,13 @@ class CLITest < Minitest::Test
   end
 
   class Client
-    attr_reader :endpoint, :preloads
+    attr_reader :endpoint, :preloads, :pulls, :configuration_changes
 
     def initialize
       @endpoint = "http://127.0.0.1:11434"
       @preloads = []
+      @pulls = []
+      @configuration_changes = []
     end
 
     def version = "0.33.0"
@@ -31,6 +33,14 @@ class CLITest < Minitest::Test
 
     def preload!(model:, context_length:)
       @preloads << [model, context_length]
+    end
+
+    def pull!(model)
+      @pulls << model
+    end
+
+    def configure!(configuration)
+      @configuration_changes << configuration
     end
 
     private
@@ -94,6 +104,57 @@ class CLITest < Minitest::Test
     end
   end
 
+  def test_bootstrap_requires_only_the_generic_capability_request_option
+    with_tmpdir do |root|
+      client = Client.new
+      legacy_path = File.join(root, "legacy.json")
+      File.write(legacy_path, JSON.generate(legacy_requirement_document))
+
+      [
+        ["bootstrap", "--model", MODEL, "--context-length", "131072", "--json"],
+        ["bootstrap", "--requirement", legacy_path, "--json"]
+      ].each do |arguments|
+        stdout = StringIO.new
+        stderr = StringIO.new
+        status = LocalOllamaWorkers::CLI.run(
+          arguments,
+          env: {"LOW_STATE_ROOT" => root},
+          stdout:,
+          stderr:,
+          components: {client:}
+        )
+
+        assert_equal 2, status, arguments.join(" ")
+        assert_empty stdout.string, arguments.join(" ")
+        assert_includes stderr.string, "--capability-request", arguments.join(" ")
+      end
+      assert_empty client.preloads
+    end
+  end
+
+  def test_generic_bootstrap_path_rejects_legacy_adventurefinder_input
+    with_tmpdir do |root|
+      path = File.join(root, "legacy.json")
+      File.write(path, JSON.generate(legacy_requirement_document))
+      client = Client.new
+      stdout = StringIO.new
+      stderr = StringIO.new
+
+      status = LocalOllamaWorkers::CLI.run(
+        ["bootstrap", "--capability-request", path, "--json"],
+        env: {"LOW_STATE_ROOT" => root},
+        stdout:,
+        stderr:,
+        components: {client:}
+      )
+
+      assert_equal 1, status
+      assert_empty stdout.string
+      assert_includes stderr.string, "Ollama capability request unknown fields"
+      assert_empty client.preloads
+    end
+  end
+
   def test_bootstrap_then_workers_publishes_one_contract_valid_worker
     with_tmpdir do |root|
       identity = local_identity
@@ -101,9 +162,11 @@ class CLITest < Minitest::Test
       client = Client.new
       store = LocalOllamaWorkers::CapabilityEvidenceStore.new(root:)
       bootstrap_stdout = StringIO.new
+      request_path = File.join(root, "capability-request.json")
+      File.write(request_path, JSON.generate(capability_request_document))
 
       bootstrap_status = LocalOllamaWorkers::CLI.run(
-        ["bootstrap", "--model", MODEL, "--context-length", "131072", "--json"],
+        ["bootstrap", "--capability-request", request_path, "--json"],
         env: { "LOW_STATE_ROOT" => root },
         stdout: bootstrap_stdout,
         stderr: StringIO.new,
@@ -116,6 +179,9 @@ class CLITest < Minitest::Test
       )
       workers_stdout = StringIO.new
       preloads_before_publication = client.preloads.dup
+      evidence_before_publication = File.binread(
+        File.join(root, LocalOllamaWorkers::CapabilityEvidenceStore::EVIDENCE_FILE)
+      )
       workers_status = LocalOllamaWorkers::CLI.run(
         ["workers", "--json"],
         env: { "LOW_STATE_ROOT" => root },
@@ -135,6 +201,10 @@ class CLITest < Minitest::Test
       assert_equal 0, workers_status
       assert_equal [[MODEL, 131_072]], client.preloads
       assert_equal preloads_before_publication, client.preloads
+      assert_empty client.pulls
+      assert_empty client.configuration_changes
+      assert_equal evidence_before_publication,
+                   File.binread(File.join(root, LocalOllamaWorkers::CapabilityEvidenceStore::EVIDENCE_FILE))
       assert_equal identity.fetch("generation_id"), evidence.fetch("generation_id")
       assert_equal %w[inference local ollama], worker.fetch("labels")
       assert_equal "Apple M4 Pro 20-core GPU", worker.dig("capabilities", "gpu_id")
@@ -164,5 +234,31 @@ class CLITest < Minitest::Test
       "generation_id" => "low-macos-#{"a" * 64}",
       "endpoint" => "http://127.0.0.1:11434"
     }
+  end
+
+  def capability_request_document
+    {
+      "contract_version" => "ollama-capability-request/v0.1",
+      "ollama" => {
+        "model" => MODEL,
+        "expected_digest" => DIGEST,
+        "required_context_length" => 131_072,
+        "require_fully_gpu_resident" => true,
+        "required_gpu_id" => "Apple M4 Pro 20-core GPU"
+      }
+    }
+  end
+
+  def legacy_requirement_document
+    capability_request_document.merge(
+      "contract_version" => "adventurefinder-model-requirement/v0.1",
+      "batch_handle" => "39",
+      "production_batch_id" => "production-batch-039",
+      "plan_id" => "production-batch-039",
+      "plan_sha256" => "d" * 64,
+      "alias" => "qwen27",
+      "pool_id" => "qwen27",
+      "required_labels" => ["inference"]
+    )
   end
 end

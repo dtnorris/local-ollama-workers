@@ -3,7 +3,7 @@
 `local-ollama-workers` (LOW) publishes operator-owned local Ollama capacity
 through WLO's provider-neutral `dynamic-worker-registry/v0.1` provider API.
 
-> **AFW defines work. LOW and RPOF expose workers. WLO matches work to workers.**
+> **Capability requests define exact runtime needs. LOW observes and publishes local workers.**
 
 LOW does not schedule jobs, create WLO attempts, inject attempt endpoints,
 manage paid capacity, or execute inference workloads. Ordinary registry
@@ -23,9 +23,9 @@ script/sync-dynamic-worker-registry-contract --check
 script/sync-dynamic-worker-registry-contract --refresh
 ```
 
-LOW and RPOF are independent publishers of the same WLO API. LOW has no RPOF
-runtime or test dependency, and ordinary publication requires no
-AdventureFinder state, batch handle, alias resolution, or AF production root.
+LOW is an independent publisher of the WLO API. It has no other provider,
+AdventureFinder, or WLO runtime dependency. Ordinary publication requires no
+external provenance or orchestration state.
 
 ## Current scope
 
@@ -83,39 +83,31 @@ curl --fail --silent --show-error http://127.0.0.1:11434/api/tags
 curl --fail --silent --show-error http://127.0.0.1:11434/api/ps
 ```
 
-Deliberately establish capability evidence for one already-installed model:
+Deliberately establish capability evidence for one already-installed model by
+passing WLO's provider-neutral `ollama-capability-request/v0.1` document:
 
 ```bash
-bin/low bootstrap \
-  --model ministral-3:14b-instruct-2512-q4_K_M \
-  --context-length 131072 \
-  --json
+bin/low bootstrap --capability-request /path/to/ollama-capability-request.json --json
 ```
 
-When AdventureFinder has already resolved a short alias against a frozen AFW
-plan, pass that exact artifact instead:
+The request contains only exact Ollama runtime requirements: model identity,
+full digest, context length, GPU residency, and optional GPU identity. Unknown
+fields and legacy AdventureFinder envelopes are rejected. Installed-model and
+GPU mismatches fail before preload; observed model, digest, context, residency,
+or GPU mismatches prevent evidence persistence. LOW neither infers missing
+provenance nor accepts aliases or digest prefixes.
 
-```bash
-bin/low bootstrap --requirement /path/to/model-requirement.json --json
-```
-
-The requirement path validates the exact model, full digest, context, residency,
-and optional GPU identity. Installed-model and GPU mismatches fail before preload;
-observed context or residency mismatches prevent evidence persistence. The alias is
-retained only as provenance and is never interpreted by LOW.
-
-The model name and context above are examples, not defaults. Bootstrap records
-the context Ollama actually loaded; it never promotes or rounds that value to
-the requested one.
+Bootstrap records the context Ollama actually loaded and requires exact equality;
+it never promotes, rounds, or substitutes a higher context.
 
 Publisher and capability state default to
 `~/.local/state/local-ollama-workers`. Set `LOW_STATE_ROOT` to select another
 state directory. `LOW_WORKER_ID` and `LOW_OLLAMA_ENDPOINT` may override the
 single logical worker ID and loopback endpoint.
 
-LOW supplies a conforming local worker only after the exact production model is
-explicitly bootstrapped. It does not choose a pool or model, resolve aliases, or
-run the workload itself.
+LOW supplies a conforming local worker only after the exact requested model is
+explicitly bootstrapped. It does not select or reinterpret requirements, schedule
+work, or run the workload itself.
 
 ## Development
 
