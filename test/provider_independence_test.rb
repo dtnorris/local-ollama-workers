@@ -12,6 +12,11 @@ class ProviderIndependenceTest < Minitest::Test
     /workload[_-]orchestrator/i
   ].freeze
 
+  def test_loaded_features_contain_no_sibling_implementation
+    forbidden = $LOADED_FEATURES.grep(/(?:adventure[_-]finder|af[_-]workloads|workload[_-]orchestrator|runpod[_-]ollama[_-]fleet)/i)
+    assert_empty forbidden
+  end
+
   def test_ruby_dependency_graph_imports_neither_other_provider_nor_wlo_or_adventurefinder
     imports = RUBY_ROOTS.flat_map do |root|
       Dir[File.join(REPO_ROOT, root, "**", "*")].flat_map do |path|
