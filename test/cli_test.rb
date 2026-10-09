@@ -19,17 +19,20 @@ class CLITest < Minitest::Test
 
   class Client
     attr_reader :endpoint, :preloads, :pulls, :configuration_changes
+    attr_accessor :installed, :running
 
     def initialize
       @endpoint = "http://127.0.0.1:11434"
       @preloads = []
       @pulls = []
       @configuration_changes = []
+      @installed = [{ "model" => MODEL, "digest" => DIGEST }]
+      @running = [running_model]
     end
 
     def version = "0.33.0"
-    def installed_models = [{ "model" => MODEL, "digest" => DIGEST }]
-    def running_models = [running_model]
+    def installed_models = installed
+    def running_models = running
 
     def preload!(model:, context_length:)
       @preloads << [model, context_length]
@@ -213,6 +216,32 @@ class CLITest < Minitest::Test
       assert_equal LocalOllamaWorkers::Contract.capability_fingerprint(worker),
                    worker.fetch("capability_fingerprint")
       assert_equal snapshot, LocalOllamaWorkers::Contract.validate_snapshot!(snapshot)
+    end
+  end
+
+  def test_malformed_capability_evidence_cannot_publish_false_ready
+    with_tmpdir do |root|
+      path = File.join(root, LocalOllamaWorkers::CapabilityEvidenceStore::EVIDENCE_FILE)
+      File.binwrite(path, "{not-json\n")
+      stdout = StringIO.new
+      stderr = StringIO.new
+
+      status = LocalOllamaWorkers::CLI.run(
+        ["workers", "--json"],
+        env: { "LOW_STATE_ROOT" => root },
+        stdout:,
+        stderr:,
+        components: {
+          observer: Observer.new(local_identity),
+          client: Client.new,
+          evidence_store: LocalOllamaWorkers::CapabilityEvidenceStore.new(root:)
+        }
+      )
+
+      assert_equal 1, status
+      assert_empty stdout.string
+      assert_includes stderr.string, "could not read local capability evidence"
+      refute File.exist?(File.join(root, LocalOllamaWorkers::PublisherState::STATE_FILE))
     end
   end
 

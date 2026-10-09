@@ -3,6 +3,7 @@
 require_relative "test_helper"
 
 class LocalWorkerSourceTest < Minitest::Test
+  include LowTestSupport
   MODEL = "fixture-model:latest"
   DIGEST = "a" * 64
 
@@ -120,6 +121,46 @@ class LocalWorkerSourceTest < Minitest::Test
     client = Client.new(installed: [installed_model], running: [], version: "0.34.0")
 
     assert_empty source_with(client:).workers
+  end
+
+  def test_reopened_evidence_publishes_one_worker_with_accumulated_capabilities
+    with_tmpdir do |root|
+      store = LocalOllamaWorkers::CapabilityEvidenceStore.new(root:)
+      store.record!(
+        identity:,
+        ollama_version: "0.33.0",
+        gpu_id: "Apple M4 Pro 20-core GPU",
+        model: evidence.fetch("models").first
+      )
+      second = evidence.fetch("models").first.merge(
+        "model" => "second:latest",
+        "digest" => "b" * 64,
+        "context_length" => 65_536,
+        "runtime_size_bytes" => 20_000,
+        "runtime_size_vram_bytes" => 20_000
+      )
+      store.record!(
+        identity:,
+        ollama_version: "0.33.0",
+        gpu_id: "Apple M4 Pro 20-core GPU",
+        model: second
+      )
+      reopened = LocalOllamaWorkers::CapabilityEvidenceStore.new(root:)
+      client = Client.new(
+        installed: [
+          installed_model,
+          { "model" => "second:latest", "digest" => "b" * 64 }
+        ],
+        running: [running_model]
+      )
+
+      workers = source_with(client:, store: reopened).workers
+
+      assert_equal 1, workers.length
+      assert_equal identity.fetch("worker_id"), workers.first.fetch("worker_id")
+      assert_equal [MODEL, "second:latest"],
+                   workers.first.dig("capabilities", "ollama", "models").map { |model| model.fetch("model") }
+    end
   end
 
   private

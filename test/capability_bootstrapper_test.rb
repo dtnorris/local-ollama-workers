@@ -198,23 +198,73 @@ class CapabilityBootstrapperTest < Minitest::Test
     assert_empty store.records
   end
 
+  def test_repeated_exact_bootstrap_reloads_and_refreshes_one_model_evidence
+    Dir.mktmpdir("low-repeat-bootstrap-") do |root|
+      client = default_client
+      store = LocalOllamaWorkers::CapabilityEvidenceStore.new(root:)
+
+      bootstrapper(
+        client:,
+        store:,
+        clock: -> { Time.utc(2030, 1, 1, 0, 1, 0) }
+      ).bootstrap(capability_request: request)
+      bootstrapper(
+        client:,
+        store:,
+        clock: -> { Time.utc(2030, 1, 1, 0, 2, 0) }
+      ).bootstrap(capability_request: request)
+
+      evidence = store.load_for(identity)
+      assert_equal [[MODEL, 131_072], [MODEL, 131_072]], client.preloads
+      assert_equal 1, evidence.fetch("models").length
+      assert_equal "2030-01-01T00:02:00Z", evidence.dig("models", 0, "observed_at")
+    end
+  end
+
+  def test_same_model_context_transition_replaces_old_capability_and_failure_preserves_it
+    Dir.mktmpdir("low-context-transition-") do |root|
+      client = default_client
+      store = LocalOllamaWorkers::CapabilityEvidenceStore.new(root:)
+      bootstrapper(client:, store:).bootstrap(capability_request: request)
+      client.running = [running_model(context_length: 65_536)]
+
+      bootstrapper(client:, store:).bootstrap(
+        capability_request: request(context_length: 65_536)
+      )
+      transitioned = store.load_for(identity)
+
+      assert_equal [65_536], transitioned.fetch("models").map { |model| model.fetch("context_length") }
+
+      client.running = [running_model(context_length: 32_768)]
+      assert_raises(LocalOllamaWorkers::Error) do
+        bootstrapper(client:, store:).bootstrap(
+          capability_request: request(context_length: 16_384)
+        )
+      end
+      assert_equal transitioned, store.load_for(identity)
+    end
+  end
+
   private
 
-  def bootstrapper(client:, store:, hardware: HardwareProbe.new, observer: Observer.new(identity, identity))
+  def bootstrapper(client:, store:, hardware: HardwareProbe.new,
+                   observer: Observer.new(identity, identity),
+                   clock: -> { Time.utc(2030, 1, 1, 0, 1, 0) })
     LocalOllamaWorkers::CapabilityBootstrapper.new(
       observer:,
       client:,
       hardware_probe: hardware,
       evidence_store: store,
-      clock: -> { Time.utc(2030, 1, 1, 0, 1, 0) }
+      clock:
     )
   end
 
-  def request(require_fully_gpu_resident: true, required_gpu_id: GPU_ID)
+  def request(require_fully_gpu_resident: true, required_gpu_id: GPU_ID,
+              context_length: 131_072)
     ollama = {
       "model" => MODEL,
       "expected_digest" => DIGEST,
-      "required_context_length" => 131_072,
+      "required_context_length" => context_length,
       "require_fully_gpu_resident" => require_fully_gpu_resident
     }
     ollama["required_gpu_id"] = required_gpu_id unless required_gpu_id.nil?
@@ -239,11 +289,11 @@ class CapabilityBootstrapperTest < Minitest::Test
     {"model" => MODEL, "digest" => DIGEST}
   end
 
-  def running_model(fully_gpu_resident: true)
+  def running_model(fully_gpu_resident: true, context_length: 131_072)
     {
       "model" => MODEL,
       "digest" => DIGEST,
-      "context_length" => 131_072,
+      "context_length" => context_length,
       "fully_gpu_resident" => fully_gpu_resident,
       "runtime_size_bytes" => 30_000,
       "runtime_size_vram_bytes" => fully_gpu_resident ? 30_000 : 20_000

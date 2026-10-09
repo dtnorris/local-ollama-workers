@@ -97,6 +97,42 @@ class CapabilityEvidenceStoreTest < Minitest::Test
     end
   end
 
+  def test_publication_observation_sees_complete_evidence_during_concurrent_update
+    with_tmpdir do |root|
+      initial = LocalOllamaWorkers::CapabilityEvidenceStore.new(root:)
+      before = record(initial)
+      renaming = Queue.new
+      release = Queue.new
+      writer = LocalOllamaWorkers::CapabilityEvidenceStore.new(
+        root:,
+        renamer: lambda do |source, destination|
+          renaming << true
+          release.pop
+          File.rename(source, destination)
+        end
+      )
+      second = evidence_model.merge(
+        "model" => "second:latest",
+        "digest" => "b" * 64,
+        "context_length" => 65_536,
+        "runtime_size_bytes" => 20_000,
+        "runtime_size_vram_bytes" => 20_000
+      )
+
+      thread = Thread.new { record(writer, model: second) }
+      renaming.pop
+      begin
+        assert_equal before, initial.load_for(identity)
+      ensure
+        release << true
+        thread.join
+      end
+
+      assert_equal %w[fixture-model:latest second:latest],
+                   initial.load_for(identity).fetch("models").map { |model| model.fetch("model") }
+    end
+  end
+
   private
 
   def identity

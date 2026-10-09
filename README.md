@@ -118,6 +118,20 @@ provenance nor accepts aliases or digest prefixes.
 Bootstrap records the context Ollama actually loaded and requires exact equality;
 it never promotes, rounds, or substitutes a higher context.
 
+Every bootstrap invocation performs a fresh zero-token preload and observation,
+including a repeated request for an already evidenced capability. A successful
+repeat replaces that model's evidence with a new observation timestamp; it
+does not create a second logical worker. Evidence for distinct models may
+accumulate under the same concrete generation as described above.
+
+Before requesting a bootstrap that changes model or context, the caller must
+establish through WLO's public state that the logical worker has no active
+attempt or reservation. Bootstrap may reconfigure or evict loaded models. LOW
+does not inspect WLO state and does not decide when that transition is safe.
+The caller must also use the current validated capability-request bytes; a
+changed request has a different semantic fingerprint and must be matched
+against a newly published worker snapshot before execution.
+
 Publisher and capability state default to
 `~/.local/state/local-ollama-workers`. Set `LOW_STATE_ROOT` to select another
 state directory. `LOW_WORKER_ID` and `LOW_OLLAMA_ENDPOINT` may override the

@@ -121,6 +121,21 @@ class OllamaCapabilityRequestTest < Minitest::Test
                  request.fingerprint
   end
 
+  def test_loaded_request_is_immutable_when_source_bytes_change
+    Dir.mktmpdir("low-capability-request-") do |root|
+      path = File.join(root, "request.json")
+      File.binwrite(path, JSON.generate(canonical_document))
+      loaded = LocalOllamaWorkers::OllamaCapabilityRequest.load(path)
+      changed = canonical_document
+      changed.fetch("ollama")["required_context_length"] = 65_536
+      File.binwrite(path, JSON.generate(changed))
+
+      assert_equal 131_072, loaded.required_context_length
+      refute_equal loaded.fingerprint,
+                   LocalOllamaWorkers::OllamaCapabilityRequest.load(path).fingerprint
+    end
+  end
+
   private
 
   def canonical_document
