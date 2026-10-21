@@ -90,6 +90,36 @@ does not load or warm a model, run inference, pull a model, or change Ollama
 configuration. With no eligible current-generation evidence it publishes an
 empty `workers` array.
 
+Successful empty publications also write one `low_empty_publication` JSON line
+to stderr (diagnostic schema version 1), after stdout is written. Registry JSON
+and eligibility rules are unchanged. Capture stderr separately; it contains
+local model and generation identities, but no prompts, raw API bodies, error
+messages, environment variables or filesystem paths. Diagnostic write failure
+is best effort and does not invalidate a published snapshot.
+
+Each record has the exact returned `registry_id`, `revision`, `published_at`,
+an observation-start `observed_at` timestamp, and the first rejecting predicate:
+`evidence_absent`, `listener_absent`, `endpoint_mismatch`,
+`evidence_identity_unavailable`, `version_mismatch`, `installed_model_mismatch`,
+`running_model_mismatch`, or `identity_changed`. This is a bounded first-cause
+explanation, not an exhaustive audit of predicates that were never evaluated.
+`expected` and `observed` contain only the relevant comparison; model mismatches
+include one model's digest, context, residency, `runtime_size_bytes` and
+`runtime_size_vram_bytes` when available. An installed observation contains only
+model/digest. Empty `/api/ps` remains eligible with matching evidence.
+
+`first_identity`, `second_identity`, and `evidence_identity` identify the actual
+observations and validated evidence. Null means absent or not reached by the
+existing short-circuit checks. `evidence_sha256` hashes `JSON.generate` of the
+same parsed, validated evidence document before identity filtering; it is not a
+hash of the original file bytes or a key-order-independent canonical hash.
+There are no extra API calls or evidence rereads. Failed polling, invalid
+evidence and identity races within an observer still raise the existing error,
+emit no snapshot or successful-publication diagnostic, and do not advance the
+registry revision. Direct library users can inspect `LocalWorkerSource#diagnostic`
+after `workers`; the CLI owns revision correlation and stderr emission. This
+channel is not durable or proof that a consumer accepted the returned snapshot.
+
 Inspect installed and loaded models without changing runtime state:
 
 ```bash

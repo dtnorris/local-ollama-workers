@@ -56,7 +56,26 @@ module LocalOllamaWorkers
         evidence_store: evidence_store
       )
       publisher = RegistryPublisher.new(state_root:, worker_source: source)
-      @stdout.write("#{JSON.generate(publisher.snapshot)}\n")
+      snapshot = publisher.snapshot
+      @stdout.write("#{JSON.generate(snapshot)}\n")
+      write_empty_diagnostic(snapshot, source.diagnostic) if snapshot.fetch("workers").empty?
+    end
+
+    # Writes one separate record after successful stdout publication. Diagnostic
+    # IO failure must not turn a valid snapshot into a failed poll. No raw errors,
+    # API bodies, environment, prompts, local paths or credentials are included.
+    def write_empty_diagnostic(snapshot, diagnostic)
+      record = diagnostic.merge(
+        "event" => "low_empty_publication",
+        "schema_version" => 1,
+        "registry_id" => snapshot.fetch("registry_id"),
+        "revision" => snapshot.fetch("revision"),
+        "published_at" => snapshot.fetch("published_at")
+      )
+      @stderr.write("#{JSON.generate(record)}\n")
+    rescue IOError, SystemCallError
+      # This best-effort channel cannot alter registry publication semantics.
+      nil
     end
 
     def bootstrap(arguments)

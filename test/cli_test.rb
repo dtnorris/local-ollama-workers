@@ -73,8 +73,13 @@ class CLITest < Minitest::Test
 
       assert first_status.success?, first_stderr
       assert second_status.success?, second_stderr
-      assert_empty first_stderr
-      assert_empty second_stderr
+      [[first, first_stderr], [second, second_stderr]].each do |snapshot, stderr|
+        diagnostic = JSON.parse(stderr)
+        assert_equal "low_empty_publication", diagnostic.fetch("event")
+        assert_equal "evidence_absent", diagnostic.fetch("reason")
+        assert_equal snapshot.fetch("registry_id"), diagnostic.fetch("registry_id")
+        assert_equal snapshot.fetch("revision"), diagnostic.fetch("revision")
+      end
       assert_equal 1, first_stdout.lines.length
       assert_equal 1, second_stdout.lines.length
       assert_equal LocalOllamaWorkers::Contract::VERSION, first.fetch("contract_version")

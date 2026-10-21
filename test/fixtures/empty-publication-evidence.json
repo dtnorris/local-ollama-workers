@@ -1,0 +1,50 @@
+{
+  "schema_version": 1,
+  "worker_id": "local-ollama-1",
+  "generation_id": "low-macos-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "endpoint": "http://127.0.0.1:11434",
+  "ollama_version": "0.33.0",
+  "gpu_id": "Synthetic GPU",
+  "models": [
+    {
+      "model": "gpt-oss:20b",
+      "digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "context_length": 131072,
+      "fully_gpu_resident": true,
+      "observed_at": "2026-10-21T12:00:00Z",
+      "runtime_size_bytes": 30000,
+      "runtime_size_vram_bytes": 30000,
+      "source": "ollama-api-ps-size-vram"
+    },
+    {
+      "model": "gpt-oss:20b-candidate",
+      "digest": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "context_length": 131072,
+      "fully_gpu_resident": true,
+      "observed_at": "2026-10-21T12:00:00Z",
+      "runtime_size_bytes": 40000,
+      "runtime_size_vram_bytes": 40000,
+      "source": "ollama-api-ps-size-vram"
+    },
+    {
+      "model": "qwen3.6:27b",
+      "digest": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      "context_length": 131072,
+      "fully_gpu_resident": true,
+      "observed_at": "2026-10-21T12:00:00Z",
+      "runtime_size_bytes": 50000,
+      "runtime_size_vram_bytes": 50000,
+      "source": "ollama-api-ps-size-vram"
+    },
+    {
+      "model": "qwen3.6:35b-a3b",
+      "digest": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+      "context_length": 131072,
+      "fully_gpu_resident": true,
+      "observed_at": "2026-10-21T12:00:00Z",
+      "runtime_size_bytes": 60000,
+      "runtime_size_vram_bytes": 60000,
+      "source": "ollama-api-ps-size-vram"
+    }
+  ]
+}

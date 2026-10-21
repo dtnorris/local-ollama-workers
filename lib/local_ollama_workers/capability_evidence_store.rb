@@ -24,9 +24,14 @@ module LocalOllamaWorkers
 
     def present? = File.file?(evidence_path)
 
+    # Loads validated evidence for identity, or nil; optionally yields the same
+    # validated document before identity filtering for read-only diagnostics.
+    # Invalid/unreadable evidence still raises Error and is never yielded.
     def load_for(identity)
       document = load_document
       return nil unless document
+
+      yield document if block_given?
       return nil unless same_identity?(document, identity)
 
       deep_copy(document)

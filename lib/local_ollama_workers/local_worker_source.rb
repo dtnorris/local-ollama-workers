@@ -1,8 +1,18 @@
 # frozen_string_literal: true
 
+require "digest"
+require "json"
+require "time"
+
 module LocalOllamaWorkers
   class LocalWorkerSource
     LABELS = %w[inference local ollama].freeze
+    IDENTITY_FIELDS = %w[worker_id generation_id endpoint].freeze
+    RUNTIME_FIELDS = %w[
+      digest context_length fully_gpu_resident runtime_size_bytes runtime_size_vram_bytes
+    ].freeze
+
+    attr_reader :diagnostic
 
     def initialize(observer:, client:, evidence_store:)
       @observer = observer
@@ -10,27 +20,45 @@ module LocalOllamaWorkers
       @evidence_store = evidence_store
     end
 
+    # Returns existing eligibility observations, recording only the first
+    # rejecting predicate. Errors propagate unchanged; they are not omissions.
     def workers
-      return [] unless @evidence_store.present?
+      @diagnostic = {
+        "observed_at" => Time.now.utc.iso8601(6),
+        "evidence_identity" => nil, "evidence_sha256" => nil,
+        "first_identity" => nil, "second_identity" => nil
+      }
+      return omitted("evidence_absent") unless @evidence_store.present?
 
       first_identity = @observer.observe
-      return [] unless first_identity
-      return [] unless first_identity.fetch("endpoint") == @client.endpoint
+      @diagnostic["first_identity"] = first_identity
+      return omitted("listener_absent") unless first_identity
+      unless first_identity.fetch("endpoint") == @client.endpoint
+        return omitted("endpoint_mismatch", { "endpoint" => @client.endpoint }, first_identity)
+      end
 
-      evidence = @evidence_store.load_for(first_identity)
-      return [] unless evidence
+      evidence = @evidence_store.load_for(first_identity) { |document| record_evidence(document) }
+      return omitted("evidence_identity_unavailable", @diagnostic["evidence_identity"], first_identity) unless evidence
       return [] unless current_evidence?(evidence)
 
       second_identity = @observer.observe
-      return [] unless second_identity == first_identity
+      @diagnostic["second_identity"] = second_identity
+      return omitted("identity_changed", first_identity, second_identity) unless second_identity == first_identity
 
       [worker_observation(first_identity, evidence)]
+    rescue Error
+      @diagnostic = nil
+      raise
     end
 
     private
 
     def current_evidence?(evidence)
-      return false unless evidence.fetch("ollama_version") == @client.version
+      version = @client.version
+      unless evidence.fetch("ollama_version") == version
+        omitted("version_mismatch", evidence.slice("ollama_version"), { "ollama_version" => version })
+        return false
+      end
 
       installed = @client.installed_models.to_h { |model| [model.fetch("model"), model] }
       running = @client.running_models.to_h { |model| [model.fetch("model"), model] }
@@ -41,15 +69,33 @@ module LocalOllamaWorkers
     end
 
     def installed_model_matches?(evidence, installed)
-      installed && installed.fetch("digest") == evidence.fetch("digest")
+      return true if installed && installed.fetch("digest") == evidence.fetch("digest")
+
+      omitted("installed_model_mismatch", evidence.slice("model", *RUNTIME_FIELDS), installed)
+      false
     end
 
     def running_model_matches?(evidence, running)
       return true unless running
 
-      %w[
-        digest context_length fully_gpu_resident runtime_size_bytes runtime_size_vram_bytes
-      ].all? { |key| running.fetch(key) == evidence.fetch(key) }
+      return true if RUNTIME_FIELDS.all? { |key| running.fetch(key) == evidence.fetch(key) }
+
+      omitted("running_model_mismatch", evidence.slice("model", *RUNTIME_FIELDS), running)
+      false
+    end
+
+    # Records the identity and JSON.generate SHA-256 of the validated document that
+    # was actually read, without rereading mutable evidence or exposing paths.
+    def record_evidence(document)
+      @diagnostic["evidence_identity"] = document.slice(*IDENTITY_FIELDS)
+      @diagnostic["evidence_sha256"] = Digest::SHA256.hexdigest(JSON.generate(document))
+    end
+
+    # Returns an empty observation with bounded comparison fields. Null means
+    # absent/unobserved; only one rejecting model is retained, never API bodies.
+    def omitted(reason, expected = nil, observed = nil)
+      @diagnostic.merge!("reason" => reason, "expected" => expected, "observed" => observed)
+      []
     end
 
     def worker_observation(identity, evidence)
