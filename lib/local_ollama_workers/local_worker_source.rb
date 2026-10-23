@@ -75,10 +75,16 @@ module LocalOllamaWorkers
       false
     end
 
+    # Compares a validated running observation with qualified evidence, returning
+    # eligibility without changing evidence. Unloaded models retain bootstrap
+    # capability. Allocation bytes are observations, not capability identity;
+    # digest, exact context and actual residency must match. Missing keys raise.
     def running_model_matches?(evidence, running)
       return true unless running
 
-      return true if RUNTIME_FIELDS.all? { |key| running.fetch(key) == evidence.fetch(key) }
+      if %w[digest context_length fully_gpu_resident].all? { |key| running.fetch(key) == evidence.fetch(key) }
+        return true
+      end
 
       omitted("running_model_mismatch", evidence.slice("model", *RUNTIME_FIELDS), running)
       false

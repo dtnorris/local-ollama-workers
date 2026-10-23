@@ -60,8 +60,12 @@ Re-bootstrap the required model after a restart.
 Several model records may be retained for one generation without keeping every
 model loaded simultaneously. Ordinary publication rechecks the server version
 and installed digest. If an evidenced model is currently loaded, its digest,
-effective context, residency result, and allocation sizes must still match the
-bootstrap observation; a changed runtime configuration cannot remain READY.
+effective context and residency result must still match the bootstrap
+observation. Valid allocation sizes may change without withdrawing the worker
+or changing its capability fingerprint; those byte counts remain audit
+observations in evidence and diagnostics, not model or capability identity.
+Runtime size must remain positive, VRAM allocation nonnegative and no greater
+than size. Loss of qualified full GPU residency remains a material change.
 
 ## Operator runbook
 
