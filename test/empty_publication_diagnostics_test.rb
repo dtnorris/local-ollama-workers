@@ -51,11 +51,12 @@ class EmptyPublicationDiagnosticsTest < Minitest::Test
     end
   end
 
-  # One paired byte isolates allocation equality while preserving full residency.
-  def test_size_drift_has_exact_comparison_hash_and_returned_revision
+  # Context remains material even with allocation drift and unchanged residency.
+  def test_context_drift_has_exact_comparison_hash_and_returned_revision
     with_publication do |publish, stdout, stderr, inputs, document, _root, calls|
       running = inputs.fetch("/api/ps").fetch("models")[1]
       %w[size size_vram].each { |key| running[key] += 1 }
+      running["context_length"] = 262_144
       assert_equal 0, publish.call
       snapshot = JSON.parse(stdout.string)
       diagnostic = JSON.parse(stderr.string)
@@ -68,6 +69,8 @@ class EmptyPublicationDiagnosticsTest < Minitest::Test
       assert_equal "running_model_mismatch", diagnostic.fetch("reason")
       %w[registry_id revision published_at].each { |key| assert_equal snapshot.fetch(key), diagnostic.fetch(key) }
       assert_equal "gpt-oss:20b-candidate", diagnostic.dig("expected", "model")
+      assert_equal 131_072, diagnostic.dig("expected", "context_length")
+      assert_equal 262_144, diagnostic.dig("observed", "context_length")
       assert_equal 40_000, diagnostic.dig("expected", "runtime_size_bytes")
       assert_equal 40_001, diagnostic.dig("observed", "runtime_size_bytes")
       assert_equal 40_000, diagnostic.dig("expected", "runtime_size_vram_bytes")
