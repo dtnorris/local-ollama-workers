@@ -10,6 +10,13 @@ manage paid capacity, or execute inference workloads. Ordinary registry
 publication is observational: it must not start or restart Ollama, pull or load
 models, warm a model, change runtime configuration, or run inference.
 
+To see what this host can advertise, use Ruby 4.0.6 and Bundler 4.0.17
+with the installed bundle, then run `bin/low workers --json` from this checkout.
+On fresh state, an empty `workers` array on stdout is a successful result.
+A separate JSON diagnostic on stderr explains the omission. The
+[operator runbook](#operator-runbook) covers bootstrap when you are ready
+to advertise an installed model.
+
 The authoritative contract and standalone conformance implementation are
 WLO-owned at `contracts/dynamic-worker-registry/v0.1`. LOW retains a
 byte-identical, explicitly non-authoritative copy under
