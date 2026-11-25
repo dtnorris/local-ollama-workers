@@ -1,7 +1,9 @@
 # local-ollama-workers
 
-`local-ollama-workers` (LOW) publishes operator-owned local Ollama capacity
-through WLO's provider-neutral `dynamic-worker-registry/v0.1` provider API.
+Local Ollama Workers (LOW) reports which models a local Ollama server is ready to run.
+[Workload Orchestrator (WLO)](https://github.com/dtnorris/workload-orchestrator)
+can use that registry to place jobs on eligible workers. LOW runs independently,
+so you can inspect what your machine advertises before connecting it to a scheduler.
 
 > **Capability requests define exact runtime needs. LOW observes and publishes local workers.**
 
@@ -17,6 +19,26 @@ A separate JSON diagnostic on stderr explains the omission. The
 [operator runbook](#operator-runbook) covers bootstrap when you are ready
 to advertise an installed model.
 
+## How LOW works
+
+```mermaid
+flowchart TD
+    CLI["bin/low"] -->|bootstrap| B["CapabilityBootstrapper"]
+    Q["Exact capability request"] --> B
+    B -->|Preload and verify the installed model| O["Local Ollama server"]
+    B -->|Record verified capability| E["CapabilityEvidenceStore"]
+    CLI -->|workers| S["LocalWorkerSource"]
+    E -->|Evidence for this daemon generation| S
+    O -->|Current runtime observations| S
+    S -->|Eligible worker or empty list| P["RegistryPublisher"]
+    P -->|Validated snapshot| J["Registry JSON on stdout"]
+```
+
+After Ollama restarts, the model can still be installed while its capability
+evidence belongs to the previous daemon process. Follow the
+[operator runbook](#operator-runbook) to bootstrap the new generation before
+expecting the worker to appear in the registry.
+
 The authoritative contract and standalone conformance implementation are
 WLO-owned at `contracts/dynamic-worker-registry/v0.1`. LOW retains a
 byte-identical, explicitly non-authoritative copy under
@@ -31,7 +53,7 @@ script/sync-dynamic-worker-registry-contract --refresh
 ```
 
 LOW is an independent publisher of the WLO API. It has no other provider,
-AdventureFinder, or WLO runtime dependency. Ordinary publication requires no
+[Adventure Finder](https://github.com/dtnorris/adventure-finder), or WLO runtime dependency. Ordinary publication requires no
 external provenance or orchestration state.
 
 ## Current scope
